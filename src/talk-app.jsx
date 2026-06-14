@@ -315,7 +315,7 @@ function App() {
         display: fileName ? 'block' : 'none', cursor: 'default'
       }}></audio>
 
-      <a href="トマリぐるぐる.html" style={{
+      <a href="guruguru.html" style={{
         position: 'absolute', top: 18, left: 18, fontSize: 13, fontWeight: 700,
         color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
       }}>← ぐるぐる版</a>

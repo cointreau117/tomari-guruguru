@@ -4,13 +4,16 @@ import { resolve } from 'path';
 
 export default defineConfig({
   plugins: [react()],
-  root: '.',
+  server: {
+    host: '127.0.0.1',
+    open: '/talk.html',
+  },
   build: {
     rollupOptions: {
       input: {
         main: resolve(import.meta.dirname, 'index.html'),
-        guruguru: resolve(import.meta.dirname, 'トマリぐるぐる.html'),
-        talk: resolve(import.meta.dirname, 'トマリトーク.html'),
+        guruguru: resolve(import.meta.dirname, 'guruguru.html'),
+        talk: resolve(import.meta.dirname, 'talk.html'),
       },
     },
   },

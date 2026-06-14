@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>トマリぐるぐる</title>
+<title>トマリトーク</title>
 <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&display=swap" rel="stylesheet">
 <style>
   html, body { margin: 0; padding: 0; height: 100%; }
@@ -14,12 +14,16 @@
       0%, 100% { translate: 0 0; }
       50% { translate: 0 -1.2vmin; }
     }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
   }
 </style>
 </head>
 <body>
 <div id="root"></div>
-<script type="module" src="tweaks-panel.jsx"></script>
-<script type="module" src="app.jsx"></script>
+<script type="module" src="src/tweaks-panel.jsx"></script>
+<script type="module" src="src/talk-app.jsx"></script>
 </body>
 </html>

@@ -31,7 +31,7 @@ if not exist node_modules (
 echo Starting Tomari dev server...
 echo Close the server window to stop the app.
 
-start "Tomari dev server" /D "%~dp0" cmd /k "npx vite --host 127.0.0.1 --open /%E3%83%88%E3%83%9E%E3%83%AA%E3%83%88%E3%83%BC%E3%82%AF.html"
+start "Tomari dev server" /D "%~dp0" cmd /k "npx vite"
 
 popd
 endlocal
