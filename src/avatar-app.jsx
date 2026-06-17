@@ -4,35 +4,28 @@ import charConfig from './character-config';
 
 const { useState, useEffect, useRef, useMemo } = React;
 
-const TALK_DEFAULTS = /*EDITMODE-BEGIN*/{
+const DEFAULTS = /*EDITMODE-BEGIN*/{
   "followRange": 340,
   "smoothing": 0.3,
   "charSize": 64,
   "bgColor": "#FFF8EE",
   "micGain": 1.6,
-  "thHalf": 0.07,
-  "thFull": 0.2,
   "release": 0.12,
-  "autoBlink": true
+  "autoBlink": true,
+  "showDebug": false
 }/*EDITMODE-END*/;
 
 const { rows: ROWS, cols: COLS } = charConfig;
-// シート: 目開け×口[とじ/中間/開け] = A/B/C, 目閉じ×口[とじ/中間/開け] = D/E/F
-const SHEETS = [
-  charConfig.sheets.eyesOpen.close,   // A
-  charConfig.sheets.eyesOpen.half,    // B
-  charConfig.sheets.eyesOpen.open,    // C
-  charConfig.sheets.eyesClosed.close, // D
-  charConfig.sheets.eyesClosed.half,  // E
-  charConfig.sheets.eyesClosed.open,  // F
-];
-const sheetFor = (eyesClosed, mouth) => SHEETS[(eyesClosed ? 3 : 0) + mouth];
+// 目開け（口とじ）= A, 目閉じ（口とじ）= D の2シートのみ使用。
+// 音声解析の配線は将来の「踊る/演出版」用に残すが、口パク出力（口シート切替）は行わない。
+const SHEET_OPEN = charConfig.sheets.eyesOpen.close;    // A
+const SHEET_BLINK = charConfig.sheets.eyesClosed.close; // D
 const SRC = (sheet, r, c) => charConfig.src(sheet, r, c);
 const BG_OPTIONS = ['#FFF8EE', '#FDEFEF', '#EEF4FB', '#2B2926'];
 
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
-// ---- 音声エンジン ----
+// ---- 音声エンジン（踊る/演出版で出力先をモーションへ差し替える前提の配線） ----
 function makeAudioEngine() {
   const st = {
     ctx: null, micAnalyser: null, micStream: null,
@@ -85,10 +78,10 @@ function makeAudioEngine() {
 }
 
 function App() {
-  const [t, setTweak] = useTweaks(TALK_DEFAULTS);
+  const [t, setTweak] = useTweaks(DEFAULTS);
   const [cell, setCell] = useState({ r: 2, c: 2 });
-  const [mouth, setMouth] = useState(0);        // 0:とじ 1:中間 2:開け
   const [blink, setBlink] = useState(false);
+  const [pressed, setPressed] = useState(false);
   const [micOn, setMicOn] = useState(false);
   const [micErr, setMicErr] = useState('');
   const [fileName, setFileName] = useState('');
@@ -123,29 +116,24 @@ function App() {
     };
   }, []);
 
-  // メインループ: 追従 + 音声レベル → 口段階
+  // メインループ: 追従 + 音声レベル（メーター表示のみ。口パク出力は無し）
   useEffect(() => {
     let raf;
     let last = { r: 2, c: 2 };
-    let lastMouth = 0;
-    let lastSwitch = 0;
-    function tick(now) {
+    function tick() {
       const tw = tweaksRef.current;
       current.current.x += (target.current.x - current.current.x) * tw.smoothing;
       current.current.y += (target.current.y - current.current.y) * tw.smoothing;
       const c = clamp(Math.round((current.current.x + 1) / 2 * (COLS - 1)), 0, COLS - 1);
       const r = clamp(Math.round((current.current.y + 1) / 2 * (ROWS - 1)), 0, ROWS - 1);
       if (r !== last.r || c !== last.c) { last = { r, c }; setCell(last); }
+      // 音量エンベロープ追従（attack 速い / release 可変）。今は音量メーター表示のみ。
+      // 「踊る/演出版」ではこの env をモーション量へ流用する。
       const raw = engine.level() * tw.micGain;
       if (raw > env.current) env.current += (raw - env.current) * 0.6;
       else env.current += (raw - env.current) * tw.release;
       if (meterRef.current) {
         meterRef.current.style.width = `${clamp(env.current / 0.4, 0, 1) * 100}%`;
-      }
-      const lv = env.current;
-      const m = lv >= tw.thFull ? 2 : lv >= tw.thHalf ? 1 : 0;
-      if (m !== lastMouth && now - lastSwitch > 70) {
-        lastMouth = m; lastSwitch = now; setMouth(m);
       }
       raf = requestAnimationFrame(tick);
     }
@@ -215,12 +203,20 @@ function App() {
     setFileName(f.name);
   }
 
+  // 描画フレーム: A（目開け）と D（目閉じ）の2シート×25=50枚のみ
   const allFrames = useMemo(() => {
     const arr = [];
-    for (const s of SHEETS) for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) arr.push({ s, r, c });
+    for (const s of [SHEET_OPEN, SHEET_BLINK]) {
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) arr.push({ s, r, c });
+    }
     return arr;
   }, []);
-  const activeSheet = sheetFor(blink, mouth);
+  const gridCells = useMemo(() => {
+    const arr = [];
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) arr.push({ r, c });
+    return arr;
+  }, []);
+  const activeSheet = blink ? SHEET_BLINK : SHEET_OPEN;
 
   const dark = t.bgColor === '#2B2926';
   const inkColor = dark ? 'rgba(255,248,238,0.85)' : 'rgba(60,48,38,0.8)';
@@ -237,12 +233,18 @@ function App() {
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       cursor: 'crosshair', fontFamily: "'Zen Maru Gothic', sans-serif"
     }}>
-      <div ref={charRef} className="bob" style={{
-        position: 'relative',
-        width: `${sizeVmin}vmin`, height: `${sizeVmin}vmin`,
-        maxWidth: 1200, maxHeight: 1200,
-        userSelect: 'none', touchAction: 'none'
-      }}>
+      <div ref={charRef} className="bob"
+        onPointerDown={() => setPressed(true)}
+        onPointerUp={() => setPressed(false)}
+        onPointerLeave={() => setPressed(false)}
+        style={{
+          position: 'relative',
+          width: `${sizeVmin}vmin`, height: `${sizeVmin}vmin`,
+          maxWidth: 1200, maxHeight: 1200,
+          transform: pressed ? 'scale(0.94)' : 'scale(1)',
+          transition: 'transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          userSelect: 'none', touchAction: 'none'
+        }}>
         {allFrames.map(({ s, r, c }) => (
           <img key={`${s}${r}${c}`} src={SRC(s, r, c)} alt="" draggable="false" style={{
             position: 'absolute', inset: 0, width: '100%', height: '100%',
@@ -253,8 +255,8 @@ function App() {
       </div>
 
       <div style={{ position: 'absolute', top: '3.5vh', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none' }}>
-        <div style={{ fontSize: 'clamp(18px, 2.4vmin, 26px)', fontWeight: 700, color: inkColor, letterSpacing: '0.18em' }}>トマリトーク</div>
-        <div style={{ fontSize: 'clamp(12px, 1.6vmin, 16px)', color: subColor, marginTop: 4, letterSpacing: '0.08em' }}>音声に合わせて口パク・まばたきするよ</div>
+        <div style={{ fontSize: 'clamp(18px, 2.4vmin, 26px)', fontWeight: 700, color: inkColor, letterSpacing: '0.18em' }}>こっち向いてDancin'なぎさん</div>
+        <div style={{ fontSize: 'clamp(12px, 1.6vmin, 16px)', color: subColor, marginTop: 4, letterSpacing: '0.08em' }}>マウスを動かすと こっちを見るよ</div>
       </div>
 
       <div style={{
@@ -293,17 +295,12 @@ function App() {
         </label>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 150 }}>
-          <div style={{ fontSize: 11, color: subColor, letterSpacing: '0.06em', display: 'flex', justifyContent: 'space-between' }}>
-            <span>音量</span>
-            <span>{['とじ', 'はんびらき', 'ぜんかい'][mouth]}</span>
-          </div>
+          <div style={{ fontSize: 11, color: subColor, letterSpacing: '0.06em' }}>音量（演出用・準備中）</div>
           <div style={{ position: 'relative', height: 10, borderRadius: 5, background: lineColor, overflow: 'hidden' }}>
             <div ref={meterRef} style={{
               position: 'absolute', left: 0, top: 0, bottom: 0, width: '0%',
               borderRadius: 5, background: 'linear-gradient(90deg, #8FBC8F, #E8B04B, #D96C4F)'
             }}></div>
-            <div style={{ position: 'absolute', top: 0, bottom: 0, width: 2, background: inkColor, opacity: 0.5, left: `${clamp(t.thHalf / 0.4, 0, 1) * 100}%` }}></div>
-            <div style={{ position: 'absolute', top: 0, bottom: 0, width: 2, background: inkColor, opacity: 0.5, left: `${clamp(t.thFull / 0.4, 0, 1) * 100}%` }}></div>
           </div>
         </div>
       </div>
@@ -315,33 +312,46 @@ function App() {
         display: fileName ? 'block' : 'none', cursor: 'default'
       }}></audio>
 
-      <a href="guruguru.html" style={{
-        position: 'absolute', top: 18, left: 18, fontSize: 13, fontWeight: 700,
-        color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
-      }}>← ぐるぐる版</a>
+      {t.showDebug ? (
+        <div style={{
+          position: 'absolute', top: 16, left: 16,
+          background: 'rgba(0,0,0,0.55)', color: '#fff', borderRadius: 10,
+          padding: '10px 12px', fontSize: 12, fontFamily: 'ui-monospace, monospace',
+          pointerEvents: 'none', lineHeight: 1.5
+        }}>
+          <div>row {cell.r} / col {cell.c}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 14px)', gap: 3, marginTop: 6 }}>
+            {gridCells.map(({ r, c }) => (
+              <div key={`d${r}-${c}`} style={{
+                width: 14, height: 14, borderRadius: 3,
+                background: r === cell.r && c === cell.c ? '#FFB13D' : 'rgba(255,255,255,0.22)'
+              }}></div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <TweaksPanel>
-        <TweakSection label="口パク"></TweakSection>
+        <TweakSection label="音声（演出用・配線のみ）"></TweakSection>
         <TweakSlider label="マイク感度" value={t.micGain} min={0.3} max={5} step={0.1}
           onChange={(v) => setTweak('micGain', v)}></TweakSlider>
-        <TweakSlider label="しきい値（はんびらき）" value={t.thHalf} min={0.01} max={0.3} step={0.005}
-          onChange={(v) => setTweak('thHalf', v)}></TweakSlider>
-        <TweakSlider label="しきい値（ぜんかい）" value={t.thFull} min={0.05} max={0.4} step={0.005}
-          onChange={(v) => setTweak('thFull', v)}></TweakSlider>
-        <TweakSlider label="口を閉じる速さ" value={t.release} min={0.03} max={0.4} step={0.01}
+        <TweakSlider label="音量追従の戻り速さ" value={t.release} min={0.03} max={0.4} step={0.01}
           onChange={(v) => setTweak('release', v)}></TweakSlider>
-        <TweakToggle label="自動まばたき" value={t.autoBlink}
-          onChange={(v) => setTweak('autoBlink', v)}></TweakToggle>
         <TweakSection label="動き"></TweakSection>
         <TweakSlider label="追従範囲" value={t.followRange} min={120} max={1200} step={10} unit="px"
           onChange={(v) => setTweak('followRange', v)}></TweakSlider>
         <TweakSlider label="追従速度" value={t.smoothing} min={0.04} max={0.5} step={0.01}
           onChange={(v) => setTweak('smoothing', v)}></TweakSlider>
+        <TweakToggle label="自動まばたき" value={t.autoBlink}
+          onChange={(v) => setTweak('autoBlink', v)}></TweakToggle>
         <TweakSection label="見た目"></TweakSection>
         <TweakSlider label="キャラサイズ" value={t.charSize} min={30} max={92} unit="vmin"
           onChange={(v) => setTweak('charSize', v)}></TweakSlider>
         <TweakColor label="背景色" value={t.bgColor} options={BG_OPTIONS}
           onChange={(v) => setTweak('bgColor', v)}></TweakColor>
+        <TweakSection label="デバッグ"></TweakSection>
+        <TweakToggle label="グリッド表示" value={t.showDebug}
+          onChange={(v) => setTweak('showDebug', v)}></TweakToggle>
       </TweaksPanel>
     </div>
   );
