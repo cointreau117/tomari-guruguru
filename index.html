@@ -18,6 +18,11 @@
       0%, 100% { opacity: 1; }
       50% { opacity: 0.35; }
     }
+    @keyframes floatUp {
+      0%   { opacity: 0; transform: translate(0, 0) scale(0.6) rotate(0deg); }
+      15%  { opacity: 1; }
+      100% { opacity: 0; transform: translate(var(--dx, 0), -180px) scale(1.15) rotate(var(--dr, 0deg)); }
+    }
   }
 </style>
 </head>
