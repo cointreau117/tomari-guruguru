@@ -23,7 +23,7 @@ const { rows: ROWS, cols: COLS } = charConfig;
 const SHEET_OPEN = charConfig.sheets.eyesOpen.close;    // A
 const SHEET_BLINK = charConfig.sheets.eyesClosed.close; // D
 const SRC = (sheet, r, c) => charConfig.src(sheet, r, c);
-const BG_OPTIONS = ['#FFF8EE', '#FDEFEF', '#EEF4FB', '#2B2926'];
+const BG_OPTIONS = ['#FFF8EE', '#F4EFFD', '#EEFBF3', '#2B2926'];
 const NOTES = ['♪', '♫', '♬', '♩'];
 
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
@@ -99,9 +99,10 @@ function App() {
   const lowVar = useRef(0);         // 低域エネルギーの分散
   const lastBeat = useRef(0);
   const beatInterval = useRef(500); // ms: 推定ビート間隔（テンポ追従用）
-  const hopStart = useRef(-1e9);    // 放物線ホップの開始時刻
-  const hopDur = useRef(380);       // ms: ホップ1回の長さ
-  const hopStrength = useRef(1);    // ホップの高さ係数（音の強さ）
+  const hopY = useRef(0);           // px: 現在の縦オフセット（正=上）
+  const hopV = useRef(0);           // px/s: 縦速度
+  const hopG = useRef(0);           // px/s^2: 重力（拍ごとに高さ/間隔から逆算）
+  const lastNow = useRef(0);        // 前フレーム時刻（dt算出用）
   const pid = useRef(0);
   const tweaksRef = useRef(t);
   tweaksRef.current = t;
@@ -183,20 +184,32 @@ function App() {
         const dt = now - lastBeat.current;
         if (dt > 150 && dt < 1500) beatInterval.current += (dt - beatInterval.current) * 0.3; // BPM推定
         lastBeat.current = now;
-        // 放物線ホップ開始。長さはビート間隔に追従（テンポに合わせてゆったり〜素早く）
-        hopStart.current = now;
-        hopDur.current = clamp(beatInterval.current * 0.9, 220, 650);
+        // 物理インパルス: 上向き初速を与えるだけ（位置は触らない）。
+        // 滞空時間 T はビート間隔に追従。頂点高 H から v=4H/T, g=8H/T² を逆算すると
+        // 単発の軌道は従来の放物線 4p(1-p) と一致しつつ、空中で次の拍が来ても
+        // 初速が差し替わるだけで位置が連続する（＝着地ワープ＝ガクつきが消える）。
+        const T = clamp(beatInterval.current * 0.9, 220, 650) / 1000; // 滞空秒
         // d/σ = 平均から何σ上か。音量を変えても不変なので、跳ねる高さが音量に依存しない
-        hopStrength.current = clamp(0.7 + (d / (std + 1e-4)) * 0.25, 0.6, 1.4);
+        const strength = clamp(0.7 + (d / (std + 1e-4)) * 0.25, 0.6, 1.4);
+        const H = strength * tw.bounce; // 頂点高(px)
+        // 上昇中(hopV>0)は再インパルスを無視。さもないと初速差し替えで際限なく上がり続ける。
+        if (hopV.current <= 0) {
+          hopV.current = 4 * H / T;
+          hopG.current = 8 * H / (T * T);
+        }
         spawnParticles();
       }
 
-      // --- モーション: 放物線バウンド 4p(1-p)（translateY）＋押下スケール ---
+      // --- モーション: 重力積分バウンド（位置・速度を連続更新）＋押下スケール ---
+      let dt = (now - lastNow.current) / 1000;
+      lastNow.current = now;
+      dt = clamp(dt, 0, 0.05); // タブ復帰などの大ジャンプを抑制
+      hopV.current -= hopG.current * dt;
+      hopY.current += hopV.current * dt;
+      if (hopY.current <= 0) { hopY.current = 0; if (hopV.current < 0) hopV.current = 0; } // 着地で停止
       const pressTarget = pressedRef.current ? 0.94 : 1;
       pressScale.current += (pressTarget - pressScale.current) * 0.25;
-      const p = (now - hopStart.current) / hopDur.current;
-      const arc = (p >= 0 && p <= 1) ? 4 * p * (1 - p) : 0; // 0→1→0 の弧（頂点 p=0.5）
-      const jump = arc * hopStrength.current * tw.bounce;
+      const jump = hopY.current;
       const el = charRef.current;
       if (el) {
         el.style.transform = `translateY(${(-jump).toFixed(2)}px) scale(${pressScale.current.toFixed(4)})`;
