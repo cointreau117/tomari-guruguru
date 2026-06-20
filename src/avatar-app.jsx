@@ -98,7 +98,9 @@ function App() {
   const lowMean = useRef(0);        // 低域エネルギーの平均（適応しきい値の基準）
   const lowVar = useRef(0);         // 低域エネルギーの分散
   const lastBeat = useRef(0);
-  const beatInterval = useRef(500); // ms: 推定ビート間隔（テンポ追従用）
+  const lastStrength = useRef(1);   // 直近検出拍の強さ（クロック発火時の高さに使う）
+  const clockPeriod = useRef(500);  // ms: テンポ位相クロックの周期（推定拍間隔）
+  const clockPhase = useRef(0);     // ms: クロックの位相（0..clockPeriod）
   const hopY = useRef(0);           // px: 現在の縦オフセット（正=上）
   const hopV = useRef(0);           // px/s: 縦速度
   const hopG = useRef(0);           // px/s^2: 重力（拍ごとに高さ/間隔から逆算）
@@ -106,6 +108,8 @@ function App() {
   const pid = useRef(0);
   const tweaksRef = useRef(t);
   tweaksRef.current = t;
+  const playingRef = useRef(false); // クロックを回す条件（再生中のみ）。rAFからの参照用
+  playingRef.current = playing;
 
   function spawnParticles() {
     if (!tweaksRef.current.particles) return;
@@ -154,6 +158,12 @@ function App() {
     function tick(now) {
       const tw = tweaksRef.current;
 
+      // フレーム経過時間（クロック前進・物理積分で共用）。タブ復帰の大ジャンプは抑制。
+      let frameMs = now - lastNow.current;
+      lastNow.current = now;
+      frameMs = clamp(frameMs, 0, 50);
+      const dtSec = frameMs / 1000;
+
       // --- マウス追従 → 25方向フレーム ---
       current.current.x += (target.current.x - current.current.x) * tw.smoothing;
       current.current.y += (target.current.y - current.current.y) * tw.smoothing;
@@ -180,30 +190,46 @@ function App() {
       // beatSensitivity(0..1): 高いほど k が小さく拍が増える
       const k = 2.2 - 1.7 * tw.beatSensitivity; // 0.5..2.2
       const thr = lowMean.current + k * std;
+      // 検出した拍は「直接跳ねる」のではなく、内部クロックの周期と位相の補正に使う（案2/PLL）。
       if (low > thr && low > lowMean.current * 1.06 && low > 0.04 && now - lastBeat.current > 180) {
         const dt = now - lastBeat.current;
-        if (dt > 150 && dt < 1500) beatInterval.current += (dt - beatInterval.current) * 0.3; // BPM推定
         lastBeat.current = now;
-        // 物理インパルス: 上向き初速を与えるだけ（位置は触らない）。
-        // 滞空時間 T はビート間隔に追従。頂点高 H から v=4H/T, g=8H/T² を逆算すると
-        // 単発の軌道は従来の放物線 4p(1-p) と一致しつつ、空中で次の拍が来ても
-        // 初速が差し替わるだけで位置が連続する（＝着地ワープ＝ガクつきが消える）。
-        const T = clamp(beatInterval.current * 0.9, 220, 650) / 1000; // 滞空秒
         // d/σ = 平均から何σ上か。音量を変えても不変なので、跳ねる高さが音量に依存しない
-        const strength = clamp(0.7 + (d / (std + 1e-4)) * 0.25, 0.6, 1.4);
-        const H = strength * tw.bounce; // 頂点高(px)
-        // 上昇中(hopV>0)は再インパルスを無視。さもないと初速差し替えで際限なく上がり続ける。
-        if (hopV.current <= 0) {
-          hopV.current = 4 * H / T;
-          hopG.current = 8 * H / (T * T);
+        lastStrength.current = clamp(0.7 + (d / (std + 1e-4)) * 0.25, 0.6, 1.4);
+        // テンポ(周期)推定: おおよそ1拍ぶんの間隔だけ採用（倍/半テンポの取り違えを避ける）
+        if (dt > clockPeriod.current * 0.6 && dt < clockPeriod.current * 1.5) {
+          clockPeriod.current = clamp(clockPeriod.current + (dt - clockPeriod.current) * 0.15, 300, 800);
         }
-        spawnParticles();
+        // 位相補正(PLL): 検出拍がクロックの拍境界に合うよう位相を少しずつ寄せる。
+        const P = clockPeriod.current;
+        let err = clockPhase.current;     // 直近の拍境界からの経過
+        if (err > P / 2) err -= P;        // [-P/2, P/2] に折り返す＝符号付き位相誤差
+        clockPhase.current -= 0.1 * err;  // 誤差の一部だけ補正（急がず同期）
+      }
+
+      // --- テンポ位相クロック: 検出に同期しつつ惰性で回り、拍ごとにバウンド＋演出を発火 ---
+      // 直近に拍を検出している間（再生中）だけ回す。検出が一時的に抜けても惰性で拍を打ち続ける。
+      const clockActive = playingRef.current && (now - lastBeat.current < 2000);
+      if (clockActive) {
+        clockPhase.current += frameMs;
+        if (clockPhase.current >= clockPeriod.current) {
+          clockPhase.current -= clockPeriod.current;
+          // クロックの拍でバウンド発火。滞空時間は周期に追従、高さは直近検出の強さ。
+          const T = clamp(clockPeriod.current * 0.9, 220, 650) / 1000; // 滞空秒
+          const H = lastStrength.current * tw.bounce; // 頂点高(px)
+          // 上昇中(hopV>0)は再インパルスを無視（際限なく上がり続けるのを防ぐ）。
+          if (hopV.current <= 0) {
+            hopV.current = 4 * H / T;
+            hopG.current = 8 * H / (T * T);
+          }
+          spawnParticles();
+        }
+      } else {
+        clockPhase.current = 0; // 停止中は位相をリセット
       }
 
       // --- モーション: 重力積分バウンド（位置・速度を連続更新）＋押下スケール ---
-      let dt = (now - lastNow.current) / 1000;
-      lastNow.current = now;
-      dt = clamp(dt, 0, 0.05); // タブ復帰などの大ジャンプを抑制
+      const dt = dtSec;
       hopV.current -= hopG.current * dt;
       hopY.current += hopV.current * dt;
       if (hopY.current <= 0) { hopY.current = 0; if (hopV.current < 0) hopV.current = 0; } // 着地で停止
