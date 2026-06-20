@@ -14,6 +14,8 @@ const DEFAULTS = /*EDITMODE-BEGIN*/{
   "autoBlink": true,
   "beatSensitivity": 0.6,
   "bounce": 30,
+  "accentFreq": 0.8,
+  "accentGain": 2.2,
   "particles": true,
   "showDebug": false
 }/*EDITMODE-END*/;
@@ -101,6 +103,7 @@ function App() {
   const lastStrength = useRef(1);   // 直近検出拍の強さ（クロック発火時の高さに使う）
   const clockPeriod = useRef(500);  // ms: テンポ位相クロックの周期（推定拍間隔）
   const clockPhase = useRef(0);     // ms: クロックの位相（0..clockPeriod）
+  const lastAccent = useRef(0);     // ms: 直近のアクセント大ジャンプ時刻（連発防止）
   const hopY = useRef(0);           // px: 現在の縦オフセット（正=上）
   const hopV = useRef(0);           // px/s: 縦速度
   const hopG = useRef(0);           // px/s^2: 重力（拍ごとに高さ/間隔から逆算）
@@ -194,8 +197,9 @@ function App() {
       if (low > thr && low > lowMean.current * 1.06 && low > 0.04 && now - lastBeat.current > 180) {
         const dt = now - lastBeat.current;
         lastBeat.current = now;
-        // d/σ = 平均から何σ上か。音量を変えても不変なので、跳ねる高さが音量に依存しない
-        lastStrength.current = clamp(0.7 + (d / (std + 1e-4)) * 0.25, 0.6, 1.4);
+        // d/σ = 平均から何σ上か。音量を変えても不変（再生音量に非依存）。
+        const sigmaAbove = d / (std + 1e-4);
+        lastStrength.current = clamp(0.7 + sigmaAbove * 0.25, 0.6, 1.4);
         // テンポ(周期)推定: おおよそ1拍ぶんの間隔だけ採用（倍/半テンポの取り違えを避ける）
         if (dt > clockPeriod.current * 0.6 && dt < clockPeriod.current * 1.5) {
           clockPeriod.current = clamp(clockPeriod.current + (dt - clockPeriod.current) * 0.15, 300, 800);
@@ -205,6 +209,22 @@ function App() {
         let err = clockPhase.current;     // 直近の拍境界からの経過
         if (err > P / 2) err -= P;        // [-P/2, P/2] に折り返す＝符号付き位相誤差
         clockPhase.current -= 0.1 * err;  // 誤差の一部だけ補正（急がず同期）
+
+        // 強拍アクセント: 飛び抜けて強い拍のとき、クロックとは別に「大ジャンプ」を即興で差し込む。
+        // 定常リズムは保ったまま抑揚を足す。頻度スライダーでしきい値σと連発間隔を可変
+        // （最小では非常に高いσ＝発火しづらく、ほぼOFF相当になる）。
+        const accentSigma = 4.5 - 2.3 * tw.accentFreq; // freq0→4.5σ(ほぼOFF) … freq1→2.2σ
+        const accentGap = 1800 - 900 * tw.accentFreq;  // ms: 連発防止間隔
+        if (playingRef.current && sigmaAbove > accentSigma && now - lastAccent.current > accentGap) {
+          lastAccent.current = now;
+          const Ta = clamp(clockPeriod.current * 1.1, 260, 700) / 1000; // やや長め＝ふわっと高く
+          const aStrength = clamp(tw.accentGain + (sigmaAbove - accentSigma) * 0.4, tw.accentGain, tw.accentGain + 1.2);
+          const Ha = aStrength * tw.bounce;
+          const va = 4 * Ha / Ta;
+          // 上昇中でも、今より大きい初速なら上書きして“ポップ”させる（アクセントは稀なので暴走しない）。
+          if (va > hopV.current) { hopV.current = va; hopG.current = 8 * Ha / (Ta * Ta); }
+          spawnParticles();
+        }
       }
 
       // --- テンポ位相クロック: 検出に同期しつつ惰性で回り、拍ごとにバウンド＋演出を発火 ---
@@ -422,6 +442,10 @@ function App() {
           onChange={(v) => setTweak('beatSensitivity', v)}></TweakSlider>
         <TweakSlider label="跳ねる強さ" value={t.bounce} min={0} max={80} step={1} unit="px"
           onChange={(v) => setTweak('bounce', v)}></TweakSlider>
+        <TweakSlider label="強拍アクセントの頻度" value={t.accentFreq} min={0} max={1} step={0.05}
+          onChange={(v) => setTweak('accentFreq', v)}></TweakSlider>
+        <TweakSlider label="強拍アクセントの大きさ" value={t.accentGain} min={1.2} max={3.5} step={0.1}
+          onChange={(v) => setTweak('accentGain', v)}></TweakSlider>
         <TweakToggle label="音符パーティクル" value={t.particles}
           onChange={(v) => setTweak('particles', v)}></TweakToggle>
         <TweakSection label="音声"></TweakSection>
