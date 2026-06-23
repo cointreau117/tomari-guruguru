@@ -126,14 +126,24 @@ function App() {
   function spawnParticles() {
     if (!tweaksRef.current.particles) return;
     const n = 1 + Math.floor(Math.random() * 2); // 1〜2個
+    // 色相を「オレンジ→赤→紫→青→緑」の経路（長い側・270°アーク）でテンポに連動させる。
+    // 速い拍(周期小)＝オレンジ寄り、遅い拍(周期大)＝緑寄り。各粒に±ジッタでランダム性。
+    // 実測の clockPeriod は速め(〜500ms)に寄りがちで、上限800まで届かず寒色が出にくい。
+    // そこでマッピングのレンジを上限側に狭め、遅め(〜600ms)で緑に達するようにする。
+    const HUE_PMIN = 340, HUE_PMAX = 600;
+    const period = clamp(clockPeriod.current, HUE_PMIN, HUE_PMAX);
+    const centerHue = 30 - (period - HUE_PMIN) / (HUE_PMAX - HUE_PMIN) * 270; // 340ms→30(橙) … 600ms→120(緑)
+    const light = tweaksRef.current.bgColor === '#2B2926' ? 66 : 52; // 背景に応じて視認性を確保
     const add = [];
     for (let i = 0; i < n; i++) {
+      const hue = ((centerHue + (Math.random() * 2 - 1) * 30) % 360 + 360) % 360; // ±30 ランダム、0..360へ正規化
       add.push({
         id: pid.current++,
         left: 28 + Math.random() * 44,                 // %
         dx: Math.round((Math.random() * 2 - 1) * 46),  // px 横ドリフト
         dr: Math.round((Math.random() * 2 - 1) * 40),  // deg 回転
         note: NOTES[Math.floor(Math.random() * NOTES.length)],
+        color: `hsl(${hue.toFixed(0)}, 80%, ${light}%)`,
         dur: 1000 + Math.round(Math.random() * 600)
       });
     }
@@ -381,7 +391,6 @@ function App() {
   const subColor = dark ? 'rgba(255,248,238,0.45)' : 'rgba(60,48,38,0.45)';
   const panelBg = dark ? 'rgba(48,45,42,0.92)' : 'rgba(255,255,255,0.88)';
   const lineColor = dark ? 'rgba(255,248,238,0.14)' : 'rgba(60,48,38,0.12)';
-  const noteColor = dark ? '#FFD9A0' : '#D96C4F';
 
   const sizeVmin = t.charSize * 4 / 3;
 
@@ -412,7 +421,7 @@ function App() {
         {particles.map((p) => (
           <span key={p.id} style={{
             position: 'absolute', left: `${p.left}%`, top: '28%',
-            fontSize: 'clamp(20px, 3.2vmin, 38px)', color: noteColor,
+            fontSize: 'clamp(40px, 6.4vmin, 76px)', color: p.color,
             pointerEvents: 'none', willChange: 'transform, opacity',
             animation: `floatUp ${p.dur}ms ease-out forwards`,
             '--dx': `${p.dx}px`, '--dr': `${p.dr}deg`
