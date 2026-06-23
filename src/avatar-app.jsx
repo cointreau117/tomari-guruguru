@@ -16,6 +16,8 @@ const DEFAULTS = /*EDITMODE-BEGIN*/{
   "bounce": 30,
   "accentFreq": 0.8,
   "accentGain": 2.2,
+  "smileWhenDancing": true,
+  "smileBreakFreq": 0.4,
   "particles": true,
   "showDebug": false
 }/*EDITMODE-END*/;
@@ -24,6 +26,7 @@ const { rows: ROWS, cols: COLS } = charConfig;
 // 目開け（口とじ）= A, 目閉じ（口とじ）= D の2シートのみ使用。
 const SHEET_OPEN = charConfig.sheets.eyesOpen.close;    // A
 const SHEET_BLINK = charConfig.sheets.eyesClosed.close; // D
+const SHEET_SMILE = charConfig.sheets.eyesOpen.half;    // B（笑顔・目を閉じた素材。踊り中に使用）
 const SRC = (sheet, r, c) => charConfig.src(sheet, r, c);
 const BG_OPTIONS = ['#FFF8EE', '#F4EFFD', '#EEFBF3', '#2B2926'];
 const NOTES = ['♪', '♫', '♬', '♩'];
@@ -87,6 +90,8 @@ function App() {
   const [fileName, setFileName] = useState('');
   const [playing, setPlaying] = useState(false);
   const [particles, setParticles] = useState([]);
+  const [dancing, setDancing] = useState(false);     // 踊り中（拍検出中）= 笑顔の起点
+  const [smileBreak, setSmileBreak] = useState(false); // 踊り中に一瞬だけ通常顔へ戻す
 
   const charRef = useRef(null);
   const audioElRef = useRef(null);
@@ -113,6 +118,7 @@ function App() {
   tweaksRef.current = t;
   const playingRef = useRef(false); // クロックを回す条件（再生中のみ）。rAFからの参照用
   playingRef.current = playing;
+  const dancingRef = useRef(false); // 「踊り中」state の前回値（変化時のみ setState する用）
 
   function spawnParticles() {
     if (!tweaksRef.current.particles) return;
@@ -230,6 +236,8 @@ function App() {
       // --- テンポ位相クロック: 検出に同期しつつ惰性で回り、拍ごとにバウンド＋演出を発火 ---
       // 直近に拍を検出している間（再生中）だけ回す。検出が一時的に抜けても惰性で拍を打ち続ける。
       const clockActive = playingRef.current && (now - lastBeat.current < 2000);
+      // 踊り中＝笑顔の起点。表情切替に再描画が要るので、変化時のみ setState（setCell と同方針）。
+      if (clockActive !== dancingRef.current) { dancingRef.current = clockActive; setDancing(clockActive); }
       if (clockActive) {
         clockPhase.current += frameMs;
         if (clockPhase.current >= clockPeriod.current) {
@@ -305,6 +313,26 @@ function App() {
     return () => { alive = false; clearTimeout(timer); };
   }, [t.autoBlink]);
 
+  // 笑顔ほどけ: 踊り中、不規則な間隔で一瞬だけ通常顔へ戻す（常時笑顔の単調さ回避）。
+  // まばたきスケジューラと同型。頻度スライダーで間隔を可変（最小でほぼ常時笑顔）。
+  useEffect(() => {
+    if (!dancing || !t.smileWhenDancing) { setSmileBreak(false); return; }
+    let alive = true;
+    let timer;
+    const rand = (a, b) => a + Math.random() * (b - a);
+    function schedule() {
+      const f = tweaksRef.current.smileBreakFreq;  // スライダーは次回スケジュールから反映
+      const base = 9000 - 7000 * f;                // freq0≈9s(ほぼ常時笑顔) … freq1≈2s
+      timer = setTimeout(() => {
+        if (!alive) return;
+        setSmileBreak(true);
+        timer = setTimeout(() => { if (!alive) return; setSmileBreak(false); schedule(); }, rand(300, 600));
+      }, rand(base, base * 1.8));
+    }
+    schedule();
+    return () => { alive = false; clearTimeout(timer); };
+  }, [dancing, t.smileWhenDancing]);
+
   function onFilePick(e) {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
@@ -316,10 +344,10 @@ function App() {
     setFileName(f.name);
   }
 
-  // 描画フレーム: A（目開け）と D（目閉じ）の2シート×25=50枚のみ
+  // 描画フレーム: A（目開け）/ D（目閉じ）/ B（笑顔）の3シート×25=75枚
   const allFrames = useMemo(() => {
     const arr = [];
-    for (const s of [SHEET_OPEN, SHEET_BLINK]) {
+    for (const s of [SHEET_OPEN, SHEET_BLINK, SHEET_SMILE]) {
       for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) arr.push({ s, r, c });
     }
     return arr;
@@ -329,7 +357,10 @@ function App() {
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) arr.push({ r, c });
     return arr;
   }, []);
-  const activeSheet = blink ? SHEET_BLINK : SHEET_OPEN;
+  // 踊り中（拍検出中）かつほどけ中でなければ笑顔(B)。笑顔表示中は blink を無視＝まばたき抑止。
+  const activeSheet = (dancing && t.smileWhenDancing && !smileBreak)
+    ? SHEET_SMILE
+    : (blink ? SHEET_BLINK : SHEET_OPEN);
 
   const dark = t.bgColor === '#2B2926';
   const inkColor = dark ? 'rgba(255,248,238,0.85)' : 'rgba(60,48,38,0.8)';
@@ -446,6 +477,10 @@ function App() {
           onChange={(v) => setTweak('accentFreq', v)}></TweakSlider>
         <TweakSlider label="強拍アクセントの大きさ" value={t.accentGain} min={1.2} max={3.5} step={0.1}
           onChange={(v) => setTweak('accentGain', v)}></TweakSlider>
+        <TweakToggle label="踊り中に笑顔" value={t.smileWhenDancing}
+          onChange={(v) => setTweak('smileWhenDancing', v)}></TweakToggle>
+        <TweakSlider label="通常顔に戻る頻度（高いほど頻繁）" value={t.smileBreakFreq} min={0} max={1} step={0.05}
+          onChange={(v) => setTweak('smileBreakFreq', v)}></TweakSlider>
         <TweakToggle label="音符パーティクル" value={t.particles}
           onChange={(v) => setTweak('particles', v)}></TweakToggle>
         <TweakSection label="音声"></TweakSection>
