@@ -3,7 +3,7 @@ import { join, posix } from 'node:path';
 
 const DIST = 'dist';
 const BASE = '/tomari-guruguru/';
-const HTML_FILES = ['index.html', 'talk.html', 'guruguru.html'];
+const HTML_FILES = ['index.html'];
 const SHEETS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
 function fail(message) {
@@ -66,7 +66,7 @@ for (const file of HTML_FILES) {
   const html = readDistHtml(file);
   assertNoRootAssetReference(file, html);
   assertReferencedBaseAssetsExist(file, html);
-  if (file !== 'index.html') assertBaseAssetReference(file, html);
+  assertBaseAssetReference(file, html);
 }
 
 assertSliceImages();

@@ -10,12 +10,15 @@ from pathlib import Path
 
 SHEET_NAMES = {
     "A": "目開け_口とじ",
-    "B": "目開け_口中間",
-    "C": "目開け_口開け",
-    "D": "目閉じ_口とじ",
-    "E": "目閉じ_口中間",
-    "F": "目閉じ_口開け",
 }
+# SHEET_NAMES = {
+#     "A": "目開け_口とじ",
+#     "B": "目開け_口中間",
+#     "C": "目開け_口開け",
+#     "D": "目閉じ_口とじ",
+#     "E": "目閉じ_口中間",
+#     "F": "目閉じ_口開け",
+# }
 
 
 def run(cmd: list[str], *, input_bytes: bytes | None = None) -> bytes:
@@ -504,8 +507,8 @@ def main() -> None:
     parser.add_argument("--slices-out", default="public/slices2", type=Path)
     parser.add_argument("--cell", default=900, type=int)
     parser.add_argument("--canvas", default=1200, type=int)
-    parser.add_argument("--anchor-x", default=600, type=int)
-    parser.add_argument("--anchor-y", default=900, type=int)
+    parser.add_argument("--anchor-x", default=-1, type=int)
+    parser.add_argument("--anchor-y", default=-1, type=int)
     parser.add_argument("--alpha-threshold", default=64, type=int)
     parser.add_argument(
         "--remove-gray-residue",
@@ -598,6 +601,12 @@ def main() -> None:
                     area = sum(components[i].area for i in ids)
                     row_summary.append(f"{len(ids)}:{area}")
                 print(f"  row{row} comps(area) {' '.join(row_summary)}")
+
+        # Set default anchor points if not specified
+        if args.anchor_x < 0:
+            args.anchor_x = args.canvas // 2
+        if args.anchor_y < 0:
+            args.anchor_y = args.canvas - args.canvas // 100
 
         jobs = max(1, args.jobs)
         futures = []
