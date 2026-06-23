@@ -143,6 +143,11 @@ function App() {
     }, pt.dur));
   }
 
+  // audio プレーヤーの初期音量（マウント時に一度だけ。以後のユーザー操作は維持）
+  useEffect(() => {
+    if (audioElRef.current) audioElRef.current.volume = 0.5;
+  }, []);
+
   // マウス追従
   useEffect(() => {
     function onMove(e) {
