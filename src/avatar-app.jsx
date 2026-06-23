@@ -358,12 +358,25 @@ function App() {
     return () => { alive = false; clearTimeout(timer); };
   }, [dancing, t.smileWhenDancing]);
 
+  // 曲の解析・モーション・表情まわりの内部状態を初期化（曲を切り替えても前曲の情報を残さない）
+  function resetMusicState() {
+    lowMean.current = 0; lowVar.current = 0;          // ビート検出の適応統計（コールドスタート）
+    lastBeat.current = 0; lastStrength.current = 1;
+    clockPeriod.current = 500; clockPhase.current = 0; // テンポ位相クロックを既定へ
+    lastAccent.current = 0;
+    hopY.current = 0; hopV.current = 0; hopG.current = 0; // バウンドを停止位置へ
+    env.current = 0;
+    clockActiveRef.current = false; dancingRef.current = false; danceStartAt.current = 0;
+    setDancing(false); setSmileBreak(false);
+  }
+
   function onFilePick(e) {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
     const el = audioElRef.current;
     engine.attachAudioEl(el);
     engine.resume();
+    resetMusicState();
     el.src = URL.createObjectURL(f);
     el.play().catch(() => {});
     setFileName(f.name);
