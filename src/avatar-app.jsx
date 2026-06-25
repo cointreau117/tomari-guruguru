@@ -78,6 +78,20 @@ function makeAudioEngine() {
       st.fileSourceMade = true;
     },
     resume() { if (st.ctx) st.ctx.resume(); },
+    // iOS 解錠: AudioContext は初期 suspended で、ユーザー操作内で resume しないと走らない。
+    // さらにファイルピッカーの往復で操作トークンが失われるため、ピッカーより前の本物のタップで
+    // 事前に resume＋無音バッファ再生して解錠しておく（createMediaElementSource 経由の無音対策）。
+    unlock() {
+      const c = ctx();
+      if (c.state === 'suspended') c.resume();
+      try {
+        const b = c.createBuffer(1, 1, 22050);
+        const s = c.createBufferSource();
+        s.buffer = b;
+        s.connect(c.destination);
+        s.start(0);
+      } catch (e) { /* 解錠失敗は無視（PC等では元から running） */ }
+    },
     level() { return levelOf(active()); },
     // low: ベース/キック帯（~47-235Hz）, high: 高域（~1.9-5.6kHz）
     bands() { return { low: bandEnergy(1, 5), high: bandEnergy(40, 120) }; }
@@ -158,6 +172,25 @@ function App() {
   useEffect(() => {
     if (audioElRef.current) audioElRef.current.volume = 0.5;
   }, []);
+
+  // iOS 用: 最初の本物のユーザー操作で AudioContext を解錠（ファイルピッカーの往復前に済ませる）。
+  // これをしないと iOS では createMediaElementSource 経由が無音になり、再生音も解析(検知)も止まる。
+  useEffect(() => {
+    let done = false;
+    const unlock = () => {
+      if (done) return;
+      done = true;
+      engine.unlock();
+      document.removeEventListener('pointerdown', unlock, true);
+      document.removeEventListener('touchend', unlock, true);
+    };
+    document.addEventListener('pointerdown', unlock, true);
+    document.addEventListener('touchend', unlock, true);
+    return () => {
+      document.removeEventListener('pointerdown', unlock, true);
+      document.removeEventListener('touchend', unlock, true);
+    };
+  }, [engine]);
 
   // Tweaksパネルを「パネル外タップ」で閉じる（✕に気付きにくい初見ユーザー向け）。
   // 基盤 tweaks-panel.jsx は触らず、パネル開時（.twk-panel が存在）に外側の pointerdown を
