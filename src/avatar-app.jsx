@@ -159,6 +159,20 @@ function App() {
     if (audioElRef.current) audioElRef.current.volume = 0.5;
   }, []);
 
+  // Tweaksパネルを「パネル外タップ」で閉じる（✕に気付きにくい初見ユーザー向け）。
+  // 基盤 tweaks-panel.jsx は触らず、パネル開時（.twk-panel が存在）に外側の pointerdown を
+  // 検知して __deactivate_edit_mode を送る（パネルはこのメッセージで setOpen(false) する）。
+  useEffect(() => {
+    function onDown(e) {
+      const panel = document.querySelector('.twk-panel');
+      if (!panel) return;                         // 閉じている＝何もしない
+      if (e.target.closest && e.target.closest('.twk-panel')) return; // パネル内の操作は無視
+      window.postMessage({ type: '__deactivate_edit_mode' }, '*');
+    }
+    document.addEventListener('pointerdown', onDown, true); // capture: stopPropagation に邪魔されない
+    return () => document.removeEventListener('pointerdown', onDown, true);
+  }, []);
+
   // マウス追従
   useEffect(() => {
     function onMove(e) {
@@ -467,7 +481,7 @@ function App() {
             padding: '9px 16px', cursor: 'pointer', minHeight: 44, boxSizing: 'border-box'
           }}>
             ♪ 音楽ファイルを読み込む
-            <input type="file" accept="audio/*" onChange={onFilePick} style={{ display: 'none' }}></input>
+            <input type="file" accept=".mp3,.m4a,.aac,.wav,.flac,.ogg,.oga,.opus,audio/*" onChange={onFilePick} style={{ display: 'none' }}></input>
           </label>
 
           <div className="vol-meter" style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 150 }}>
