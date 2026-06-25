@@ -481,7 +481,7 @@ function App() {
             padding: '9px 16px', cursor: 'pointer', minHeight: 44, boxSizing: 'border-box'
           }}>
             ♪ 音楽ファイルを読み込む
-            <input type="file" accept="audio/*" onChange={onFilePick} style={{ display: 'none' }}></input>
+            <input type="file" accept=".mp3,.m4a,.aac,.wav,.flac,.ogg,.oga,.opus,audio/*" onChange={onFilePick} style={{ display: 'none' }}></input>
           </label>
 
           <div className="vol-meter" style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 150 }}>
