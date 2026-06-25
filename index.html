@@ -24,6 +24,16 @@
       100% { opacity: 0; transform: translate(var(--dx, 0), -180px) scale(1.15) rotate(var(--dr, 0deg)); }
     }
   }
+  /* 狭い画面（スマホ）では下部バーの音量メーターを省いて footprint を抑える */
+  @media (max-width: 480px) {
+    .vol-meter { display: none !important; }
+    /* 狭幅では audio プレーヤーがほぼ全幅になり下中央バーと重なるので、
+       ファイル読込後はバーを audio の上へ持ち上げる */
+    .ctrl-bar.has-audio { bottom: 88px !important; }
+  }
+  /* Tweaksパネル: iOS Safari の 100vh 問題（ツールバー裏を含む高さ）で閉じる✕が
+     画面外に隠れるのを防ぐため、可視領域基準の 100dvh で上書き（基盤 tweaks-panel.jsx は触らない） */
+  .twk-panel { max-height: calc(100dvh - 32px) !important; }
 </style>
 </head>
 <body>

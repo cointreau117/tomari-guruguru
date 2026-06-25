@@ -448,31 +448,36 @@ function App() {
         <div style={{ fontSize: 'clamp(12px, 1.6vmin, 16px)', color: subColor, marginTop: 4, letterSpacing: '0.08em' }}>音楽を読み込むと リズムに乗って踊るよ</div>
       </div>
 
-      <div style={{
-        position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)',
-        display: 'flex', alignItems: 'center', gap: 14,
-        background: panelBg, backdropFilter: 'blur(10px)',
-        border: `1px solid ${lineColor}`, borderRadius: 18,
-        padding: '12px 18px', cursor: 'default',
-        boxShadow: '0 6px 24px rgba(60,48,38,0.10)'
+      <div className={fileName ? 'ctrl-bar has-audio' : 'ctrl-bar'} style={{
+        position: 'absolute', bottom: 20, left: 0, right: 0,
+        display: 'flex', justifyContent: 'center', padding: '0 16px',
+        pointerEvents: 'none'
       }}>
-        <label style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          fontWeight: 700, fontSize: 14, color: inkColor,
-          border: `1.5px solid ${lineColor}`, borderRadius: 12,
-          padding: '9px 16px', cursor: 'pointer', minHeight: 44, boxSizing: 'border-box'
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 14, maxWidth: '100%',
+          background: panelBg, backdropFilter: 'blur(10px)',
+          border: `1px solid ${lineColor}`, borderRadius: 18,
+          padding: '12px 18px', cursor: 'default', pointerEvents: 'auto',
+          boxShadow: '0 6px 24px rgba(60,48,38,0.10)'
         }}>
-          ♪ 音楽ファイルを読み込む
-          <input type="file" accept="audio/*" onChange={onFilePick} style={{ display: 'none' }}></input>
-        </label>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, whiteSpace: 'nowrap',
+            fontWeight: 700, fontSize: 14, color: inkColor,
+            border: `1.5px solid ${lineColor}`, borderRadius: 12,
+            padding: '9px 16px', cursor: 'pointer', minHeight: 44, boxSizing: 'border-box'
+          }}>
+            ♪ 音楽ファイルを読み込む
+            <input type="file" accept="audio/*" onChange={onFilePick} style={{ display: 'none' }}></input>
+          </label>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 150 }}>
-          <div style={{ fontSize: 11, color: subColor, letterSpacing: '0.06em' }}>音量</div>
-          <div style={{ position: 'relative', height: 10, borderRadius: 5, background: lineColor, overflow: 'hidden' }}>
-            <div ref={meterRef} style={{
-              position: 'absolute', left: 0, top: 0, bottom: 0, width: '0%',
-              borderRadius: 5, background: 'linear-gradient(90deg, #8FBC8F, #E8B04B, #D96C4F)'
-            }}></div>
+          <div className="vol-meter" style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 150 }}>
+            <div style={{ fontSize: 11, color: subColor, letterSpacing: '0.06em' }}>音量</div>
+            <div style={{ position: 'relative', height: 10, borderRadius: 5, background: lineColor, overflow: 'hidden' }}>
+              <div ref={meterRef} style={{
+                position: 'absolute', left: 0, top: 0, bottom: 0, width: '0%',
+                borderRadius: 5, background: 'linear-gradient(90deg, #8FBC8F, #E8B04B, #D96C4F)'
+              }}></div>
+            </div>
           </div>
         </div>
       </div>
@@ -481,7 +486,7 @@ function App() {
         onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)}
         style={{
-          position: 'absolute', bottom: 20, left: 20, width: 300,
+          position: 'absolute', bottom: 20, left: 20, width: 300, maxWidth: 'calc(100vw - 40px)',
           display: fileName ? 'block' : 'none', cursor: 'default'
         }}></audio>
 
